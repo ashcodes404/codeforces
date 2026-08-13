@@ -13,16 +13,18 @@ $CodeforcesHandle = "ashCodes404"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "       CODEFORCES SOLUTION ORGANIZER    " -ForegroundColor Cyan
+Write-Host "      CODEFORCES SOLUTION ORGANIZER     " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ============================================================
-# FIND LATEST CPH .PROB FILE
+# FIND LATEST CPH PROBLEM
 # ============================================================
 
+$cphFolder = Join-Path $RepoRoot ".cph"
+
 $probFiles = Get-ChildItem `
-    -Path (Join-Path $RepoRoot ".cph") `
+    -Path $cphFolder `
     -Filter "*.prob" `
     -File `
     -ErrorAction SilentlyContinue
@@ -36,7 +38,7 @@ $probFile = $probFiles |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1
 
-Write-Host "CPH problem file:" -ForegroundColor Yellow
+Write-Host "CPH problem:" -ForegroundColor Yellow
 Write-Host $probFile.Name
 
 # ============================================================
@@ -49,18 +51,8 @@ $name = $data.name
 $url = $data.url
 $sourcePath = $data.srcPath
 
-if (-not $name) {
-    Write-Host "Problem name not found." -ForegroundColor Red
-    exit 1
-}
-
-if (-not $url) {
-    Write-Host "Problem URL not found." -ForegroundColor Red
-    exit 1
-}
-
-if (-not $sourcePath) {
-    Write-Host "Source path not found." -ForegroundColor Red
+if (-not $name -or -not $url -or -not $sourcePath) {
+    Write-Host "CPH data is incomplete." -ForegroundColor Red
     exit 1
 }
 
@@ -70,7 +62,7 @@ Write-Host "URL     : $url" -ForegroundColor Green
 Write-Host "Source  : $sourcePath" -ForegroundColor Green
 
 # ============================================================
-# EXTRACT CONTEST ID + PROBLEM INDEX
+# EXTRACT CONTEST ID + INDEX
 # ============================================================
 
 if ($url -match "/problem/(\d+)/([A-Za-z0-9]+)") {
@@ -81,8 +73,7 @@ if ($url -match "/problem/(\d+)/([A-Za-z0-9]+)") {
 }
 else {
 
-    Write-Host ""
-    Write-Host "Could not extract contest ID and problem index." -ForegroundColor Red
+    Write-Host "Could not extract Codeforces problem ID." -ForegroundColor Red
     exit 1
 }
 
@@ -91,11 +82,11 @@ Write-Host "Contest : $contestId" -ForegroundColor Cyan
 Write-Host "Index   : $problemIndex" -ForegroundColor Cyan
 
 # ============================================================
-# GET CODEFORCES PROBLEM INFORMATION
+# GET PROBLEM METADATA
 # ============================================================
 
 Write-Host ""
-Write-Host "Fetching Codeforces rating and tags..." -ForegroundColor Yellow
+Write-Host "Fetching Codeforces metadata..." -ForegroundColor Yellow
 
 $api = Invoke-RestMethod `
     -Uri "https://codeforces.com/api/problemset.problems"
@@ -126,7 +117,7 @@ Write-Host "Rating : $rating" -ForegroundColor Green
 Write-Host "Tags   : $tags" -ForegroundColor Green
 
 # ============================================================
-# VERIFY SOURCE FILE
+# CHECK SOURCE FILE
 # ============================================================
 
 if (-not (Test-Path $sourcePath)) {
@@ -139,56 +130,108 @@ if (-not (Test-Path $sourcePath)) {
 }
 
 # ============================================================
-# CHECK CODEFORCES ACCEPTANCE
+# CLEAN PROBLEM NAME
 # ============================================================
 
-if (-not $Test) {
+# Remove "A. ", "B. ", "C. ", etc.
+$cleanName = $name -replace '^[A-Za-z]\.\s*', ''
+
+# Remove Windows-invalid filename characters
+$cleanName = $cleanName -replace '[<>:"/\\|?*]', ''
+
+# Replace spaces with underscores
+$cleanName = $cleanName -replace '\s+', '_'
+
+# Remove duplicate underscores
+$cleanName = $cleanName -replace '_+', '_'
+
+# Remove leading/trailing underscores
+$cleanName = $cleanName.Trim('_')
+
+$folderName = "${contestId}${problemIndex}_${cleanName}"
+
+# ============================================================
+# DETERMINE RATING FOLDER
+# ============================================================
+
+$ratingFolderName = "$rating"
+
+$ratingFolder = Join-Path `
+    $RepoRoot `
+    $ratingFolderName
+
+$problemFolder = Join-Path `
+    $ratingFolder `
+    $folderName
+
+# ============================================================
+# TEST MODE
+# ============================================================
+
+if ($Test) {
 
     Write-Host ""
-    Write-Host "Checking Codeforces submission..." -ForegroundColor Yellow
-
-    $statusApi = Invoke-RestMethod `
-        -Uri "https://codeforces.com/api/user.status?handle=$CodeforcesHandle&count=1000"
-
-    $accepted = $statusApi.result |
-        Where-Object {
-            $_.contestId -eq [int]$contestId -and
-            $_.problem.index -eq $problemIndex -and
-            $_.verdict -eq "OK"
-        } |
-        Select-Object -First 1
-
-    if (-not $accepted) {
-
-        Write-Host ""
-        Write-Host "NOT ACCEPTED YET." -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "Submit the solution on Codeforces first." -ForegroundColor Yellow
-        Write-Host "Nothing has been moved or deleted." -ForegroundColor Yellow
-        Write-Host ""
-
-        exit 0
-    }
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host "             TEST / DRY RUN            " -ForegroundColor Yellow
+    Write-Host "========================================" -ForegroundColor Yellow
 
     Write-Host ""
-    Write-Host "ACCEPTED!" -ForegroundColor Green
+    Write-Host "Would create:" -ForegroundColor Cyan
+    Write-Host "$ratingFolderName\$folderName"
+
+    Write-Host ""
+    Write-Host "Would create:"
+    Write-Host "  solution.cpp"
+    Write-Host "  README.md"
+
+    Write-Host ""
+    Write-Host "NO files moved."
+    Write-Host "NO files deleted."
+    Write-Host "NO git commit."
+    Write-Host "NO git push."
+
+    Write-Host ""
+    Write-Host "Test completed successfully." -ForegroundColor Green
+
+    exit 0
 }
 
 # ============================================================
-# CREATE SAFE FOLDER NAME
+# CHECK ACCEPTED STATUS
 # ============================================================
 
-$safeName = $name -replace '[<>:"/\\|?*]', ''
-$safeName = $safeName -replace '\s+', '_'
-$safeName = $safeName.Trim('_')
+Write-Host ""
+Write-Host "Checking Codeforces submission status..." -ForegroundColor Yellow
 
-$folderName = "${contestId}${problemIndex}_${safeName}"
+$statusApi = Invoke-RestMethod `
+    -Uri "https://codeforces.com/api/user.status?handle=$CodeforcesHandle&count=1000"
+
+$accepted = $statusApi.result |
+    Where-Object {
+        $_.contestId -eq [int]$contestId -and
+        $_.problem.index -eq $problemIndex -and
+        $_.verdict -eq "OK"
+    } |
+    Select-Object -First 1
+
+if (-not $accepted) {
+
+    Write-Host ""
+    Write-Host "NOT ACCEPTED." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Submit the problem on Codeforces first." -ForegroundColor Yellow
+    Write-Host "Nothing was changed." -ForegroundColor Yellow
+    Write-Host ""
+
+    exit 0
+}
+
+Write-Host ""
+Write-Host "ACCEPTED!" -ForegroundColor Green
 
 # ============================================================
 # CREATE RATING FOLDER
 # ============================================================
-
-$ratingFolder = Join-Path $RepoRoot "$rating"
 
 if (-not (Test-Path $ratingFolder)) {
 
@@ -202,8 +245,6 @@ if (-not (Test-Path $ratingFolder)) {
 # CREATE PROBLEM FOLDER
 # ============================================================
 
-$problemFolder = Join-Path $ratingFolder $folderName
-
 if (-not (Test-Path $problemFolder)) {
 
     New-Item `
@@ -213,14 +254,16 @@ if (-not (Test-Path $problemFolder)) {
 }
 
 Write-Host ""
-Write-Host "Created folder:" -ForegroundColor Cyan
-Write-Host "$rating\$folderName"
+Write-Host "Problem folder:" -ForegroundColor Cyan
+Write-Host "$ratingFolderName\$folderName"
 
 # ============================================================
 # COPY SOLUTION
 # ============================================================
 
-$destination = Join-Path $problemFolder "solution.cpp"
+$destination = Join-Path `
+    $problemFolder `
+    "solution.cpp"
 
 Copy-Item `
     -Path $sourcePath `
@@ -228,14 +271,14 @@ Copy-Item `
     -Force
 
 Write-Host ""
-Write-Host "Solution copied." -ForegroundColor Green
+Write-Host "solution.cpp created." -ForegroundColor Green
 
 # ============================================================
 # CREATE README
 # ============================================================
 
 $readme = @"
-# $name
+# $cleanName
 
 - **Codeforces:** [$contestId$problemIndex]($url)
 - **Rating:** $rating
@@ -252,17 +295,19 @@ Write your approach here.
 - **Space:** 
 "@
 
-$readmePath = Join-Path $problemFolder "README.md"
+$readmePath = Join-Path `
+    $problemFolder `
+    "README.md"
 
 Set-Content `
     -Path $readmePath `
     -Value $readme `
     -Encoding UTF8
 
-Write-Host "README created." -ForegroundColor Green
+Write-Host "README.md created." -ForegroundColor Green
 
 # ============================================================
-# DELETE ORIGINAL CPH SOURCE
+# REMOVE ORIGINAL CPH SOURCE
 # ============================================================
 
 Remove-Item `
@@ -270,7 +315,7 @@ Remove-Item `
     -Force
 
 # ============================================================
-# DELETE CPH PROBLEM FILE
+# REMOVE CPH PROBLEM DATA
 # ============================================================
 
 Remove-Item `
@@ -278,7 +323,7 @@ Remove-Item `
     -Force
 
 Write-Host ""
-Write-Host "Original CPH files cleaned." -ForegroundColor Green
+Write-Host "Temporary CPH files cleaned." -ForegroundColor Green
 
 # ============================================================
 # GIT
@@ -288,21 +333,21 @@ Set-Location $RepoRoot
 
 git add .
 
-git commit -m "Solve $contestId$problemIndex - $name"
+git commit -m "Solve $contestId$problemIndex - $cleanName"
 
 git push origin main
 
 # ============================================================
-# DONE
+# FINISHED
 # ============================================================
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "             GITHUB UPDATED             " -ForegroundColor Green
+Write-Host "          GITHUB UPDATED               " -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "$rating/$folderName/" -ForegroundColor Cyan
+Write-Host "$ratingFolderName\$folderName\" -ForegroundColor Cyan
 Write-Host "    solution.cpp"
 Write-Host "    README.md"
 Write-Host ""
