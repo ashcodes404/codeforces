@@ -7,7 +7,7 @@
 
 ## Approach
 
-Write your approach here.
+if(s[i-1] == s[i] == s[i+1] == '.') then with the help of the magic property answer is always two , else answer is the count of '.' .
 
 ## Complexity
 
