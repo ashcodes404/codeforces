@@ -9,7 +9,9 @@
 
 Write your approach here.
 
+here we do not need to use the binary search on the answers , we can simply do it in the constant time complexity.
+like max(d1 , d2 , d3.....2 * dn) ; 
 ## Complexity
 
-- **Time:** 
-- **Space:** 
+- **Time:**
+- **Space:**
