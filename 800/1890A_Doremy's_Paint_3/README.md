@@ -7,7 +7,7 @@
 
 ## Approach
 
-Write your approach here.
+Ai-1 == Ai + 1 
 
 ## Complexity
 
